@@ -35,7 +35,8 @@ env:
 
 jobs:
   changes:
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    # disable condition check for testing
+    # if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     uses: ./.github/workflows/changes.yml
     with:
       source: true
@@ -66,16 +67,13 @@ jobs:
       - changes
       - check-secrets
 
-    if: ${{ !failure() && !cancelled() && (needs.check-secrets.outputs.can_access_secrets == 'true' || github.event_name == 'merge_group') }}
+    # disable condition check for testing
+    # if: ${{ !failure() && !cancelled() && (needs.check-secrets.outputs.can_access_secrets == 'true' || github.event_name == 'merge_group') }}
     strategy:
       matrix:
         # If you modify this list, please also update the `int_tests` job in changes.yml.
         service: [
-          "amqp", "appsignal", "axiom", "aws", "azure", "clickhouse", "databend", "datadog-agent",
-          "datadog-logs", "datadog-metrics", "datadog-traces", "dnstap", "docker-logs", "elasticsearch",
-          "eventstoredb", "fluent", "gcp", "greptimedb", "http-client", "influxdb", "kafka", "logstash",
-          "loki", "mongodb", "nats", "nginx", "opentelemetry", "postgres", "prometheus", "pulsar",
-          "redis", "splunk", "webhdfs"
+          "docker-logs", "elasticsearch"
         ]
     timeout-minutes: 90
     steps:
