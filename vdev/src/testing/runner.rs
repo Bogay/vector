@@ -229,6 +229,7 @@ where
         }
 
         command.args(["--env", "RUST_BACKTRACE=1"]);
+        command.args(["--env", "RUSTUP_AUTO_INSTALL=0"]);
         command.args(["--env", &format!("CARGO_BUILD_TARGET_DIR={TARGET_PATH}")]);
         for (key, value) in outer_env {
             if let Some(value) = value {
