@@ -29,6 +29,14 @@ pub struct FieldsSpec {
     #[configurable(metadata(docs::examples = "k8s.ns_labels"))]
     #[configurable(metadata(docs::examples = ""))]
     pub namespace_labels: OptionalTargetPath,
+
+    /// Event field for the Namespace's annotations.
+    ///
+    /// Set to `""` to suppress this key.
+    #[configurable(metadata(docs::examples = ".k8s.ns_annotations"))]
+    #[configurable(metadata(docs::examples = "k8s.ns_annotations"))]
+    #[configurable(metadata(docs::examples = ""))]
+    pub namespace_annotations: OptionalTargetPath,
 }
 
 impl Default for FieldsSpec {
@@ -37,6 +45,11 @@ impl Default for FieldsSpec {
             namespace_labels: OwnedTargetPath::event(owned_value_path!(
                 "kubernetes",
                 "namespace_labels"
+            ))
+            .into(),
+            namespace_annotations: OwnedTargetPath::event(owned_value_path!(
+                "kubernetes",
+                "namespace_annotations"
             ))
             .into(),
         }
@@ -104,6 +117,21 @@ fn annotate_from_metadata(
             )
         }
     }
+
+    if let Some(annotations) = &metadata.annotations
+        && let Some(prefix_path) = &fields_spec.namespace_annotations.path
+    {
+        for (key, value) in annotations.iter() {
+            let key_path = path!(key);
+            log_namespace.insert_source_metadata(
+                Config::NAME,
+                log,
+                Some(LegacyKey::Overwrite((&prefix_path.path).concat(key_path))),
+                path!("namespace_annotations", key),
+                value.to_owned(),
+            )
+        }
+    }
 }
 
 #[cfg(test)]
@@ -122,6 +150,7 @@ mod tests {
                 LogEvent::default(),
                 LogNamespace::Legacy,
             ),
+            // Test labels only with Vector namespace
             (
                 FieldsSpec::default(),
                 ObjectMeta {
@@ -151,6 +180,81 @@ mod tests {
                 },
                 LogNamespace::Vector,
             ),
+            // Test annotations only with Vector namespace
+            (
+                FieldsSpec::default(),
+                ObjectMeta {
+                    name: Some("sandbox0-name".to_owned()),
+                    uid: Some("sandbox0-uid".to_owned()),
+                    annotations: Some(
+                        vec![
+                            ("sandbox0-annotation0".to_owned(), "ann-val0".to_owned()),
+                            ("sandbox0-annotation1".to_owned(), "ann-val1".to_owned()),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                    ..ObjectMeta::default()
+                },
+                {
+                    let mut log = LogEvent::default();
+                    log.insert(
+                        metadata_path!(
+                            "kubernetes_logs",
+                            "namespace_annotations",
+                            "sandbox0-annotation0"
+                        ),
+                        "ann-val0",
+                    );
+                    log.insert(
+                        metadata_path!(
+                            "kubernetes_logs",
+                            "namespace_annotations",
+                            "sandbox0-annotation1"
+                        ),
+                        "ann-val1",
+                    );
+                    log
+                },
+                LogNamespace::Vector,
+            ),
+            // Test both labels and annotations with Vector namespace
+            (
+                FieldsSpec::default(),
+                ObjectMeta {
+                    name: Some("sandbox0-name".to_owned()),
+                    uid: Some("sandbox0-uid".to_owned()),
+                    labels: Some(
+                        vec![("sandbox0-label0".to_owned(), "val0".to_owned())]
+                            .into_iter()
+                            .collect(),
+                    ),
+                    annotations: Some(
+                        vec![("sandbox0-annotation0".to_owned(), "ann-val0".to_owned())]
+                            .into_iter()
+                            .collect(),
+                    ),
+                    ..ObjectMeta::default()
+                },
+                {
+                    let mut log = LogEvent::default();
+                    log.insert(
+                        metadata_path!("kubernetes_logs", "namespace_labels", "sandbox0-label0"),
+                        "val0",
+                    );
+                    log.insert(
+                        metadata_path!(
+                            "kubernetes_logs",
+                            "namespace_annotations",
+                            "sandbox0-annotation0"
+                        ),
+                        "ann-val0",
+                    );
+                    log
+                },
+                LogNamespace::Vector,
+            ),
+            // Test labels with Legacy namespace
             (
                 FieldsSpec::default(),
                 ObjectMeta {
@@ -180,9 +284,52 @@ mod tests {
                 },
                 LogNamespace::Legacy,
             ),
+            // Test annotations with Legacy namespace
+            (
+                FieldsSpec::default(),
+                ObjectMeta {
+                    name: Some("sandbox0-name".to_owned()),
+                    uid: Some("sandbox0-uid".to_owned()),
+                    annotations: Some(
+                        vec![
+                            ("sandbox0-annotation0".to_owned(), "ann-val0".to_owned()),
+                            ("sandbox0-annotation1".to_owned(), "ann-val1".to_owned()),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                    ..ObjectMeta::default()
+                },
+                {
+                    let mut log = LogEvent::default();
+                    log.insert(
+                        event_path!(
+                            "kubernetes",
+                            "namespace_annotations",
+                            "sandbox0-annotation0"
+                        ),
+                        "ann-val0",
+                    );
+                    log.insert(
+                        event_path!(
+                            "kubernetes",
+                            "namespace_annotations",
+                            "sandbox0-annotation1"
+                        ),
+                        "ann-val1",
+                    );
+                    log
+                },
+                LogNamespace::Legacy,
+            ),
+            // Test custom paths for both labels and annotations
             (
                 FieldsSpec {
                     namespace_labels: OwnedTargetPath::event(owned_value_path!("ns_labels")).into(),
+                    namespace_annotations: OwnedTargetPath::event(owned_value_path!(
+                        "ns_annotations"
+                    ))
+                    .into(),
                 },
                 ObjectMeta {
                     name: Some("sandbox0-name".to_owned()),
@@ -195,17 +342,26 @@ mod tests {
                         .into_iter()
                         .collect(),
                     ),
+                    annotations: Some(
+                        vec![("sandbox0-annotation0".to_owned(), "ann-val0".to_owned())]
+                            .into_iter()
+                            .collect(),
+                    ),
                     ..ObjectMeta::default()
                 },
                 {
                     let mut log = LogEvent::default();
                     log.insert(event_path!("ns_labels", "sandbox0-label0"), "val0");
                     log.insert(event_path!("ns_labels", "sandbox0-label1"), "val1");
+                    log.insert(
+                        event_path!("ns_annotations", "sandbox0-annotation0"),
+                        "ann-val0",
+                    );
                     log
                 },
                 LogNamespace::Legacy,
             ),
-            // Ensure we properly handle labels with `.` as flat fields.
+            // Ensure we properly handle labels with `.` as flat fields (Vector namespace)
             (
                 FieldsSpec::default(),
                 ObjectMeta {
@@ -250,6 +406,67 @@ mod tests {
                 },
                 LogNamespace::Vector,
             ),
+            // Ensure we properly handle annotations with `.` as flat fields (Vector namespace)
+            (
+                FieldsSpec::default(),
+                ObjectMeta {
+                    name: Some("sandbox0-name".to_owned()),
+                    uid: Some("sandbox0-uid".to_owned()),
+                    annotations: Some(
+                        vec![
+                            ("nested0.annotation0".to_owned(), "ann-val0".to_owned()),
+                            ("nested0.annotation1".to_owned(), "ann-val1".to_owned()),
+                            ("nested1.annotation0".to_owned(), "ann-val2".to_owned()),
+                            (
+                                "nested2.annotation0.deep0".to_owned(),
+                                "ann-val3".to_owned(),
+                            ),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+
+                    ..ObjectMeta::default()
+                },
+                {
+                    let mut log = LogEvent::default();
+                    log.insert(
+                        metadata_path!(
+                            "kubernetes_logs",
+                            "namespace_annotations",
+                            "nested0.annotation0"
+                        ),
+                        "ann-val0",
+                    );
+                    log.insert(
+                        metadata_path!(
+                            "kubernetes_logs",
+                            "namespace_annotations",
+                            "nested0.annotation1"
+                        ),
+                        "ann-val1",
+                    );
+                    log.insert(
+                        metadata_path!(
+                            "kubernetes_logs",
+                            "namespace_annotations",
+                            "nested1.annotation0"
+                        ),
+                        "ann-val2",
+                    );
+                    log.insert(
+                        metadata_path!(
+                            "kubernetes_logs",
+                            "namespace_annotations",
+                            "nested2.annotation0.deep0"
+                        ),
+                        "ann-val3",
+                    );
+                    log
+                },
+                LogNamespace::Vector,
+            ),
+            // Ensure we properly handle labels with `.` as flat fields (Legacy namespace)
             (
                 FieldsSpec::default(),
                 ObjectMeta {
@@ -285,6 +502,53 @@ mod tests {
                     log.insert(
                         event_path!("kubernetes", "namespace_labels", "nested2.label0.deep0"),
                         "val3",
+                    );
+                    log
+                },
+                LogNamespace::Legacy,
+            ),
+            // Ensure we properly handle annotations with `.` as flat fields (Legacy namespace)
+            (
+                FieldsSpec::default(),
+                ObjectMeta {
+                    name: Some("sandbox0-name".to_owned()),
+                    uid: Some("sandbox0-uid".to_owned()),
+                    annotations: Some(
+                        vec![
+                            ("nested0.annotation0".to_owned(), "ann-val0".to_owned()),
+                            ("nested0.annotation1".to_owned(), "ann-val1".to_owned()),
+                            ("nested1.annotation0".to_owned(), "ann-val2".to_owned()),
+                            (
+                                "nested2.annotation0.deep0".to_owned(),
+                                "ann-val3".to_owned(),
+                            ),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                    ..ObjectMeta::default()
+                },
+                {
+                    let mut log = LogEvent::default();
+                    log.insert(
+                        event_path!("kubernetes", "namespace_annotations", "nested0.annotation0"),
+                        "ann-val0",
+                    );
+                    log.insert(
+                        event_path!("kubernetes", "namespace_annotations", "nested0.annotation1"),
+                        "ann-val1",
+                    );
+                    log.insert(
+                        event_path!("kubernetes", "namespace_annotations", "nested1.annotation0"),
+                        "ann-val2",
+                    );
+                    log.insert(
+                        event_path!(
+                            "kubernetes",
+                            "namespace_annotations",
+                            "nested2.annotation0.deep0"
+                        ),
+                        "ann-val3",
                     );
                     log
                 },
